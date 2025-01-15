@@ -44,6 +44,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
   late final settingController = Get.find<SettingController>();
   bool _isTFCardAvailable = true; // 标记TF卡是否可用
   bool _isSyncing = false; // 标记是否正在同步
+  String directoryString = '';
 
   @override
   void initState() {
@@ -93,6 +94,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
       if (directory == null || !await directory.exists()) {
         throw Exception("无法获取外部存储目录或目录不存在");
       }
+      directoryString = directory.path;
       return directory;
     }
   }
@@ -197,6 +199,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
       body: Column(
         children: [
           // 文件列表或提示信息
+          Text(directoryString),
           Expanded(
             child: _isTFCardAvailable
                 ? ListView.builder(
