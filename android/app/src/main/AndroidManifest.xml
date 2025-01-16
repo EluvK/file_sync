@@ -6,6 +6,7 @@
     <!-- Android 11 及以上版本需要声明 MANAGE_EXTERNAL_STORAGE 权限 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <application
+        android:requestLegacyExternalStorage="true"
         android:label="File Sync"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

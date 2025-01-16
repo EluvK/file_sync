@@ -7,20 +7,42 @@ class SettingController extends GetxController {
   final box = GetStorage('fileSync');
 
   final serverAddress = "".obs;
+  final fileExtension = "".obs;
 
   @override
-  void onInit() {
-    serverAddress.value = box.read("server_address") ?? 'https://';
+  Future<void> onInit() async {
+    serverAddress.value = box.read('server_address') ?? 'https://';
+    fileExtension.value = box.read("file_extension") ?? '.mp3';
+    print("onInit server address: ${serverAddress.value}");
+    print("onInit file extension: ${fileExtension.value}");
     super.onInit();
+    _initialized = true;
+  }
+
+  bool _initialized = false;
+  Future<void> ensureInitialization() async {
+    while (!_initialized) {
+      await onInit();
+    }
+    return;
   }
 
   setServerAddress(String address) {
     serverAddress.value = address;
-    box.write("server_address", address);
+    box.write('server_address', address);
+  }
+
+  setFileExtension(String extension) {
+    fileExtension.value = extension;
+    box.write("file_extension", extension);
   }
 
   String getServerAddress() {
     return serverAddress.value;
+  }
+
+  String getFileExtension() {
+    return fileExtension.value;
   }
 }
 
@@ -44,15 +66,7 @@ class _Setting extends StatefulWidget {
 }
 
 class __SettingState extends State<_Setting> {
-  late final settingController = Get.find<SettingController>();
-
-  String serviceAddress = 'https://';
-
-  @override
-  void initState() {
-    serviceAddress = settingController.serverAddress.value;
-    super.initState();
-  }
+  final settingController = Get.find<SettingController>();
 
   @override
   Widget build(BuildContext context) {
@@ -62,10 +76,22 @@ class __SettingState extends State<_Setting> {
         children: [
           const Text('服务器地址：'),
           TextField(
-            controller: TextEditingController(text: serviceAddress),
+            controller: TextEditingController(
+                text: settingController.getServerAddress()),
             onChanged: (value) {
-              serviceAddress = value;
+              // serviceAddress = value;
+              print("set server address: $value");
               settingController.setServerAddress(value);
+            },
+          ),
+          Divider(),
+          const Text('文件后缀：'),
+          TextField(
+            controller: TextEditingController(
+                text: settingController.getFileExtension()),
+            onChanged: (value) {
+              // fileExtension = value;
+              settingController.setFileExtension(value);
             },
           ),
         ],

@@ -3,15 +3,21 @@ import 'dart:convert';
 import 'package:file_sync/setting.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:external_path/external_path.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:crypto/crypto.dart';
 
 void main() async {
+  await GetStorage.init('fileSync');
+
   await Get.putAsync(() async {
     final controller = SettingController();
     return controller;
   });
+  // should init before app start
+  final settingController = Get.find<SettingController>();
+  await settingController.ensureInitialization();
 
   runApp(const MyApp());
 }
@@ -45,6 +51,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
   bool _isTFCardAvailable = true; // 标记TF卡是否可用
   bool _isSyncing = false; // 标记是否正在同步
   String directoryString = '';
+  String errorString = '';
 
   @override
   void initState() {
@@ -54,25 +61,35 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
 
   // 检查权限
   Future<void> _checkPermissions() async {
-    if (await Permission.storage.request().isGranted) {
-      _loadFiles();
-    } else {
-      // 如果没有权限，显示权限请求
-      await Permission.storage.request();
+    if (!await Permission.manageExternalStorage.request().isGranted) {
+      await Permission.manageExternalStorage.request();
     }
+    // if (!await Permission.storage.request().isGranted) {
+    //   await Permission.storage.request();
+    // }
+    _loadFiles();
   }
 
   // 加载TF卡目录下的文件
   Future<void> _loadFiles() async {
     try {
       final Directory dir = await _getDirectory();
-      final List<FileSystemEntity> files = dir.listSync();
+      List<FileSystemEntity> files = dir.listSync();
+      files = files.whereType<File>().toList();
+      final filterExt = settingController.getFileExtension();
+      files = files
+          .where((file) =>
+              file.path.endsWith(filterExt) &&
+              !file.path.split('/').last.startsWith('.')) // 过滤隐藏文件
+          .toList();
+      print("files: $files");
       setState(() {
         _files = files;
         _isTFCardAvailable = true; // TF卡可用
       });
     } catch (e) {
       setState(() {
+        errorString = e.toString();
         _isTFCardAvailable = false; // TF卡不可用
       });
       print("Error loading files: $e");
@@ -83,17 +100,26 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
   Future<Directory> _getDirectory() async {
     if (Platform.isWindows) {
       // 在Windows平台上使用临时目录进行调试
-      final directory = Directory("D:\\TEST");
+      final directory = Directory("E:\\TEST");
       if (!await directory.exists()) {
         throw Exception("目录不存在");
       }
+      directoryString = directory.path;
       return directory;
     } else {
       // 获取外部存储目录路径，在Android设备上，这通常是类似于 "/storage/emulated/0"
-      final directory = await getExternalStorageDirectory();
-      if (directory == null || !await directory.exists()) {
-        throw Exception("无法获取外部存储目录或目录不存在");
+      var paths = await ExternalPath.getExternalStorageDirectories();
+      print(paths);
+      paths = paths.where((element) => !element.contains('emulated')).toList();
+      print(paths);
+      if (paths.isEmpty) {
+        throw Exception("无法获取外部存储目录");
       }
+      final directory = Directory(paths[0]);
+      // final directory = await getExternalStorageDirectory();
+      // if (directory == null || !await directory.exists()) {
+      // throw Exception("无法获取外部存储目录或目录不存在");
+      // }
       directoryString = directory.path;
       return directory;
     }
@@ -135,8 +161,9 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
     HttpClientResponse response = await request.close();
     if (response.statusCode == 200) {
       final file = File('${dir.path}/$fileName');
-      await file
-          .writeAsBytes(await response.expand((element) => element).toList());
+      final bytes = await response.expand((element) => element).toList();
+      print("file: $file, bytes: ${bytes.length}");
+      await file.writeAsBytes(bytes, mode: FileMode.writeOnly, flush: true);
     } else {
       throw Exception('Failed to download file: $fileName');
     }
@@ -173,10 +200,11 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
         cnt++;
       }
 
-      flushBar(FlushLevel.OK, '同步完成', '同步完成: $cnt 个文件');
+      flushBar(FlushLevel.OK, '同步完成', '同步完成: $cnt 个文件', upperPosition: true);
     } catch (e) {
       flushBar(FlushLevel.WARNING, '同步失败', '同步失败: $e');
     } finally {
+      _loadFiles();
       setState(() {
         _isSyncing = false;
       });
@@ -185,6 +213,11 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // String all_files = '';
+    // for (final file in _files) {
+    //   print(file.path);
+    //   all_files += '${file.path}\n';
+    // }
     return Scaffold(
       appBar: AppBar(
         title: const Text('TF卡文件更新'),
@@ -199,7 +232,11 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
       body: Column(
         children: [
           // 文件列表或提示信息
+          if (errorString.isNotEmpty) Text(errorString),
           Text(directoryString),
+          // Divider(),
+          // Text(all_files),
+          Divider(),
           Expanded(
             child: _isTFCardAvailable
                 ? ListView.builder(
@@ -208,6 +245,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
                       final file = _files[index];
                       return ListTile(
                         title: Text(file.path.split('/').last),
+                        // subtitle: Text(file.path),
                         onTap: () {
                           // 点击文件时打开文件或进行相应操作
                           print('Clicked: ${file.path}');
@@ -237,7 +275,9 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
                         },
                   child: _isSyncing
                       ? const CircularProgressIndicator()
-                      : const Text("下载", style: TextStyle(fontSize: 24)),
+                      : _isTFCardAvailable
+                          ? const Text("下载", style: TextStyle(fontSize: 24))
+                          : null,
                 ),
                 ElevatedButton(
                   onPressed: () {
