@@ -50,6 +50,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
   late final settingController = Get.find<SettingController>();
   bool _isTFCardAvailable = true; // 标记TF卡是否可用
   bool _isSyncing = false; // 标记是否正在同步
+  final _syncFilesList = [].obs;
   String directoryString = '';
   String errorString = '';
 
@@ -172,6 +173,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
   // 同步文件
   Future<void> _syncFiles() async {
     setState(() {
+      _syncFilesList.value = [];
       _isSyncing = true;
     });
     var cnt = 0;
@@ -195,6 +197,7 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
         }
 
         // 下载文件
+        _syncFilesList.add(fileName);
         print('Downloading file: $fileName');
         await _downloadFile(fileName, dir);
         cnt++;
@@ -209,6 +212,92 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
         _isSyncing = false;
       });
     }
+  }
+
+  Widget downloadInfo() {
+    if (!_isSyncing) {
+      return Column();
+    }
+    return Column(
+      children: [
+        const LinearProgressIndicator(),
+        Text('正在同步文件...'),
+        Obx(() {
+          return ListView.builder(
+            shrinkWrap: true,
+            itemCount: _syncFilesList.length,
+            itemBuilder: (context, index) {
+              final file = _syncFilesList[index];
+              final isLast = index == _syncFilesList.length - 1;
+              return ListTile(
+                title: Text(file, style: TextStyle(fontSize: 20)),
+                trailing: isLast
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: const CircularProgressIndicator(),
+                      )
+                    : Icon(Icons.check),
+              );
+            },
+          );
+        }),
+        Divider(),
+      ],
+    );
+  }
+
+  Widget fileListWidget() {
+    return ListView.builder(
+      itemCount: _files.length,
+      itemBuilder: (context, index) {
+        final file = _files[index];
+        return ListTile(
+          title: Text(
+            file.path.split('/').last,
+            style: TextStyle(fontSize: 20),
+          ),
+          // subtitle: Text(file.path),
+          trailing: IconButton(
+            onPressed: () {
+              showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: Text('删除文件'),
+                      content: Text('确定要删除文件 ${file.path.split('/').last} 吗？'),
+                      actions: [
+                        TextButton(
+                          onPressed: () async {
+                            await file.delete();
+                            _loadFiles();
+                            Get.back();
+                          },
+                          child: Text(
+                            '删除',
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Get.back();
+                          },
+                          child: Text('取消', style: TextStyle(fontSize: 16)),
+                        ),
+                      ],
+                    );
+                  });
+            },
+            icon: Icon(Icons.delete_forever_rounded),
+          ),
+          // 点击文件时打开文件或进行相应操作
+          onTap: null,
+        );
+      },
+    );
   }
 
   @override
@@ -237,22 +326,11 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
           // Divider(),
           // Text(all_files),
           Divider(),
+          // 下载文件列表
+          downloadInfo(),
           Expanded(
             child: _isTFCardAvailable
-                ? ListView.builder(
-                    itemCount: _files.length,
-                    itemBuilder: (context, index) {
-                      final file = _files[index];
-                      return ListTile(
-                        title: Text(file.path.split('/').last),
-                        // subtitle: Text(file.path),
-                        onTap: () {
-                          // 点击文件时打开文件或进行相应操作
-                          print('Clicked: ${file.path}');
-                        },
-                      );
-                    },
-                  )
+                ? fileListWidget()
                 : const Center(
                     child: Text(
                       "未检测到TF卡，请插入TF卡后刷新",
@@ -274,7 +352,11 @@ class FileExplorerScreenState extends State<FileExplorerScreen> {
                           await _syncFiles();
                         },
                   child: _isSyncing
-                      ? const CircularProgressIndicator()
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: const CircularProgressIndicator(),
+                        )
                       : _isTFCardAvailable
                           ? const Text("下载", style: TextStyle(fontSize: 24))
                           : null,
